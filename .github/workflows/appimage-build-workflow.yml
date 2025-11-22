@@ -1,0 +1,60 @@
+name: Build Sioyek AppImage
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        repository: 'ahrm/sioyek'
+        ref: 'development'
+        submodules: 'recursive'
+
+    - name: Patch version
+      run: |
+        COMMIT="$(git rev-parse --short HEAD)-dev"
+        sed -i "/^VERSION = /c\VERSION = ${COMMIT}" pdf_viewer_build_config.pro
+        sed -i "s/^std::string APPLICATION_VERSION = \".*\";/std::string APPLICATION_VERSION = \"${COMMIT}\";/" pdf_viewer/main.cpp
+        echo "Version: $COMMIT"
+        echo "COMMIT_HASH=$COMMIT" >> $GITHUB_ENV
+
+    - name: Setup
+      uses: egor-tensin/setup-gcc@v1
+      with:
+        version: 11
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libharfbuzz-dev libxrandr-dev libxi-dev libglu1-mesa-dev fuse libfuse2 libxcb-cursor0 libspeechd2
+
+    - name: Install LinuxDeploy
+      uses: miurahr/install-linuxdeploy-action@v1
+      with:
+        plugins: qt appimage
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.7.2'
+        modules: 'all'
+        cache: true
+
+    - name: Build
+      run: MAKE_PARALLEL=$(nproc) ./linuxdeploy_build_and_release.sh
+      env:
+        CC: gcc-11
+        CXX: g++-11
+
+    - name: Package
+      run: |
+        unzip -o sioyek-release-linux.zip
+        mv Sioyek-x86_64.AppImage "Sioyek-${{ env.COMMIT_HASH }}.AppImage"
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: sioyek-appimage
+        path: Sioyek-*.AppImage
